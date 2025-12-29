@@ -1,5 +1,9 @@
 # 🍓 Celeste Smart Clipper (Celeste 智能回放剪辑脚本)
 
+> [!IMPORTANT]
+> 🤖 **AI 含量极高**
+> 本项目代码由 AI 深度辅助编写。代码虽然能跑，但可能充满未知的玄学逻辑，主要供大家娱乐和参考。
+
 配合 [VidCutter](https://gamebanana.com/mods/580133) 模组的输出日志，自动识别游戏内死亡/重生事件，一键从 OBS 回放缓存中精准截取通过片段。
 
 告别海量素材堆积，告别手动剪辑痛苦！
