@@ -1,6 +1,6 @@
 # 🍓 Celeste Smart Clipper (Celeste 智能回放剪辑脚本)
 
-配合 [VidCutter](https://gamebanana.com/mods/477430) 模组的输出日志，自动识别游戏内死亡/重生事件，一键从 OBS 回放缓存中精准截取通过片段。
+配合 [VidCutter](https://gamebanana.com/mods/580133) 模组的输出日志，自动识别游戏内死亡/重生事件，一键从 OBS 回放缓存中精准截取通过片段。
 
 告别海量素材堆积，告别手动剪辑痛苦！
 
@@ -13,8 +13,8 @@
 ## 📦 安装与配置
 
 ### 1. 前置要求
-* **Celeste 游戏**：需安装 **VidCutter** Mod (用于生成日志)。
-* **OBS Studio**：需开启 **回放缓存** (Replay Buffer)，建议设置时长 ≥ 300秒。
+* **Celeste 游戏**：需安装 [**VidCutter**](https://gamebanana.com/mods/580133) Mod (用于生成日志)。
+* [**OBS Studio**](https://obsproject.com/)：需开启 **回放缓存** (Replay Buffer)，建议设置时长 ≥ 300秒。
 
 ### 2. 脚本安装
 1.  下载本仓库的 `CelesteSmartClipper.py`。
