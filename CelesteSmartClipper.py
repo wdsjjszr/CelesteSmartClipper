@@ -670,7 +670,7 @@ def open_help_log(props, prop):
 def script_description():
     return (
         "<h2 style='color:#ff6b81'>🍓 CelesteSmartClipper</h2>"
-        "<p><b>Celeste 智能回放剪辑脚本</b></p>"
+        "<p><b>Celeste 智能回放剪辑脚本v1.0</b></p>"
         "<hr>"
         "<p>配合 VidCutter 模组的输出日志，自动识别游戏内死亡/重生事件，<br>"
         "一键从 OBS 回放缓存中精准截取通过片段，告别海量素材堆积。</p>"
@@ -685,4 +685,5 @@ def script_description():
         "<hr>"
         "<p>⚙️ 首次使用：设置游戏目录 → <b>obs设置-热键</b> 中搜索 <code>Celeste</code> 绑定快捷键</p>"
         "<p>📖 点击下方按钮查看完整教程</p>"
+
     )
