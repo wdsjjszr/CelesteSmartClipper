@@ -23,9 +23,10 @@
 ### 2. 脚本安装
 1.  下载本仓库的 `CelesteSmartClipper.py`。
 2.  下载 Releases 中的 `Python_Environment.zip` 并解压到一个固定位置（路径尽量无中文）。
-3.  **OBS 设置** -> **工具** -> **脚本** -> **Python 设置**：
+     * 也可以选择自行搭建环境，注意obs不支持版本过高的Python
+4.  **OBS 设置** -> **工具** -> **脚本** -> **Python 设置**：
     * 选择刚才解压的 Python 环境文件夹。
-4.  回到 **脚本** 标签页，点击 `+` 号加载 `CelesteSmartClipper.py`。
+5.  回到 **脚本** 标签页，点击 `+` 号加载 `CelesteSmartClipper.py`。
 
 ### 3. 参数设置
 * **Celeste 游戏根目录**：填写你的游戏安装路径。
