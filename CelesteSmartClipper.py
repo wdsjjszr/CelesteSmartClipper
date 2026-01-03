@@ -750,16 +750,16 @@ if IN_OBS:
         
 
         # === 自动合成设置分组 ===
-        g_merge = obs.obs_properties_create()
-        obs.obs_properties_add_group(props, "auto_merge_settings", "🎞️ 片段合并(未实装)", obs.OBS_GROUP_NORMAL, g_merge)
-        obs.obs_properties_add_bool(g_merge, "auto_merge_enabled", "启用片段合并")
-        obs.obs_properties_add_bool(g_merge, "auto_merge_use_custom_path", "使用自定义保存目录 (不勾选则保存到第一个片段所在目录)")
-        obs.obs_properties_add_path(g_merge, "auto_merge_output_dir", "最终保存目录（可选）", obs.OBS_PATH_DIRECTORY, "", None)
-        # 时间偏移量 (支持负数，步长0.05秒)
-        # 比如：填 -0.5 表示每个片段的开始时间再提前 0.5 秒
-        obs.obs_properties_add_float(g_merge, "auto_merge_offset", "片段开始时间偏移 (秒)", -10.0, 10.0, 0.05)
-        obs.obs_properties_add_bool(g_merge, "auto_merge_transition", "启用淡入淡出过渡效果")
-        obs.obs_properties_add_button(g_merge, "btn_test_editor", "🚀 开始合并", launch_external_wrapper)
+        # g_merge = obs.obs_properties_create()
+        # obs.obs_properties_add_group(props, "auto_merge_settings", "🎞️ 片段合并(未实装)", obs.OBS_GROUP_NORMAL, g_merge)
+        # obs.obs_properties_add_bool(g_merge, "auto_merge_enabled", "启用片段合并")
+        # obs.obs_properties_add_bool(g_merge, "auto_merge_use_custom_path", "使用自定义保存目录 (不勾选则保存到第一个片段所在目录)")
+        # obs.obs_properties_add_path(g_merge, "auto_merge_output_dir", "最终保存目录（可选）", obs.OBS_PATH_DIRECTORY, "", None)
+        # # 时间偏移量 (支持负数，步长0.05秒)
+        # # 比如：填 -0.5 表示每个片段的开始时间再提前 0.5 秒
+        # obs.obs_properties_add_float(g_merge, "auto_merge_offset", "片段开始时间偏移 (秒)", -10.0, 10.0, 0.05)
+        # obs.obs_properties_add_bool(g_merge, "auto_merge_transition", "启用淡入淡出过渡效果")
+        # obs.obs_properties_add_button(g_merge, "btn_test_editor", "🚀 开始合并", launch_external_wrapper)
 
 
         return props
@@ -930,7 +930,7 @@ if IN_OBS:
     def script_description():
         return (
             "<h2 style='color:#ff6b81'>🍓 CelesteSmartClipper</h2>"
-            "<p><b>Celeste 智能回放剪辑脚本v1.1-alpha</b></p>"
+            "<p><b>Celeste 智能回放剪辑脚本v1.1</b></p>"
             "<hr>"
             "<p>配合 VidCutter 模组的输出日志，自动识别游戏内死亡/重生事件，<br>"
             "一键从 OBS 回放缓存中精准截取通过片段，告别海量素材堆积。</p>"
@@ -963,3 +963,4 @@ if __name__ == "__main__":
         print("请不要直接运行此脚本。")
         print("请在 OBS -> 工具 -> 脚本 中加载它。")
         time.sleep(3)
+
