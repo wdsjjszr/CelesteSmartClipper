@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+# ==============================================================================
+# Celeste Smart Clipper v1.1
+# Copyright (C) 2026 RemovableDiskC
+#
+# 基于 VidCutter 日志的 Celeste 自动化剪辑与合并工具
+# ==============================================================================
 import os, sys, subprocess, time, re, shutil, json
 from time import sleep
 from datetime import datetime
@@ -25,7 +32,7 @@ def get_python_executable():
     获取当前环境的 python.exe 路径 
     无论在 OBS 里还是外部，都通过这个逻辑找到同一个 python.exe
     """
-    # 如果是在 OBS 里，sys.exec_prefix 指向你在设置里选的 Python 目录
+    # 如果是在 OBS 里，sys.exec_prefix 指向在设置里选的 Python 目录
     # 如果是在外部，sys.exec_prefix 指向当前运行的 Python 目录
     base_path = sys.exec_prefix
     
@@ -104,7 +111,7 @@ log = setup_logger()
 
 
 # ==========================================
-# 外部进程逻辑 (Auto_Editor)
+# 外部进程逻辑(未实装)
 # ==========================================
 def run_external_processor():
     print("\n" + "="*50)
@@ -117,7 +124,6 @@ def run_external_processor():
     # -----------------------------------------------
     # TODO: 在这里写入读取 json、合成视频的逻辑
     # -----------------------------------------------
-    print("正在扫描片段...")
     time.sleep(1)
     print("正在合成高光集锦 (模拟中)...")
     
@@ -158,6 +164,7 @@ if IN_OBS:
             # --- 视频保存配置 ---
             self.replay1_path = ""
             self.use_custom_path = False
+            self._show_custom_path = False
             self.replay1_remove = True
             self.buffer_seconds = 1.0  #默认缓冲时长
             self.min_duration_alert = 0.0 #过短警报阈值
@@ -201,7 +208,6 @@ if IN_OBS:
         # ================= 业务逻辑：默认设置 =================
         def update_settings(self, settings):
             self.enabled = obs.obs_data_get_bool(settings, "enabled")
-            # self.debug_mode = obs.obs_data_get_bool(settings, "debug_mode")
             log_level_str = obs.obs_data_get_string(settings, "log_level")
             level = logging.DEBUG if log_level_str == "DEBUG" else logging.INFO
             if log.handlers:
@@ -215,6 +221,7 @@ if IN_OBS:
             
             self.buffer_seconds = obs.obs_data_get_double(settings, "buffer_seconds")
             self.use_custom_path = obs.obs_data_get_bool(settings, "use_custom_path")
+            self._show_custom_path = obs.obs_data_get_bool(settings, "use_custom_path")
             self.replay1_path = obs.obs_data_get_string(settings, "replay1_path")
             self.replay1_remove = obs.obs_data_get_bool(settings, "replay1_remove")
             self.include_map_name = obs.obs_data_get_bool(settings, "include_map_name")
@@ -226,6 +233,7 @@ if IN_OBS:
             self.auto_merge_output_dir = obs.obs_data_get_string(settings, "auto_merge_output_dir")
             self.auto_merge_offset = obs.obs_data_get_double(settings, "auto_merge_offset")
             self.auto_merge_transition = obs.obs_data_get_bool(settings, "auto_merge_transition")
+
 
         # ================= 核心工具函数 =================
 
@@ -280,7 +288,7 @@ if IN_OBS:
 
         def ffmpeg_extract_subclip(self, filename, t1, t2, targetname=None):
             from moviepy.config import get_setting
-            from moviepy.tools import subprocess_call
+            # from moviepy.tools import subprocess_call
                 
             name, ext = os.path.splitext(filename)
             if not targetname:
@@ -302,7 +310,7 @@ if IN_OBS:
 
             # 执行命令 (静默模式)
             # creationflags=0x08000000 是 CREATE_NO_WINDOW，防止弹黑框
-            # capture_output=True 会吞掉 ffmpeg 的原生输出，除非你想打印出来
+            # capture_output=True 会吞掉 ffmpeg 的原生输出
             try:
                 subprocess.run(
                     cmd, 
@@ -452,7 +460,7 @@ if IN_OBS:
                     try:
                         # 再次利用 moviepy 或 ffmpeg 探测最终文件时长
                         # 为了性能，这里可以用简单的 ffmpeg probe，或者复用 moviepy
-                        # 如果为了省事，可以直接用 self._get_video_metadata(file_path)
+                        # 为了省事，直接用 self._get_video_metadata(file_path)
                         # 注意：这会带来一点点IO开销，但为了精准是必须的
                         final_duration, _ = self._get_video_metadata(file_path)
                     except:
@@ -462,7 +470,7 @@ if IN_OBS:
                     # 视频总长 - (从死亡到剪辑经过的时间)
                     death_point = final_duration - raw_delta
                     
-                    # 修正：如果算出来是负数，说明死亡点在视频开始之前（缓存不够长）
+                    # 算出来是负数，说明死亡点在视频开始之前（缓存不够长）
                     if death_point < 0:
                         log.warning(f"⚠️ 死亡点在视频范围外 ({death_point:.2f}s)，可能是回放缓存太短")
                     
@@ -714,16 +722,26 @@ if IN_OBS:
 
     # ================= OBS 接口 =================
 
+
     # 设置界面
     def script_properties():
         props = obs.obs_properties_create()
         
+
         obs.obs_properties_add_button(props, "btn_help", "📖 查看详细使用说明", open_help_log)
+
+
         if not clipper_core.check_package("moviepy"):
             obs.obs_properties_add_button(props, "install_btn", "🔴 点击修复依赖 (安装 moviepy)", clipper_core.install_needed)
+
+
         obs.obs_properties_add_bool(props, "enabled", "启用脚本")
-        obs.obs_properties_add_bool(props, "enable_sound", "启用按键提示音") 
-        # obs.obs_properties_add_bool(props, "debug_mode", "调试模式")
+
+
+        p_enable_sound = obs.obs_properties_add_bool(props, "enable_sound", "启用按键提示音") 
+        obs.obs_property_set_long_description(p_enable_sound, "启用后会在按下按键时播放windows音效\n可以通过在obs场景里添加\"应用程序音频采集\"源来避免提示音效被录入视频")
+
+
         # 日志级别选择
         log_level_list = obs.obs_properties_add_list(
             props, "log_level", "日志详细程度",
@@ -734,24 +752,47 @@ if IN_OBS:
         obs.obs_property_list_add_string(log_level_list, "INFO", "INFO")
         obs.obs_property_list_add_string(log_level_list, "DEBUG", "DEBUG")
 
-        obs.obs_properties_add_path(props, "celeste_game_dir", "Celeste 游戏根目录", obs.OBS_PATH_DIRECTORY, "", None)
-        obs.obs_properties_add_float(props, "buffer_seconds", "剪辑缓冲时间 (秒)", 0.0, 60.0, 0.5)
 
+        p_celeste_game_dir = obs.obs_properties_add_path(props, "celeste_game_dir", "Celeste 游戏根目录", obs.OBS_PATH_DIRECTORY, "", None)
+        obs.obs_property_set_long_description(p_celeste_game_dir, "选择你的游戏根目录\n即要以\"/Celeste\"为结尾")
+
+
+        p_buffer = obs.obs_properties_add_float(props, "buffer_seconds", "剪辑缓冲时间 (秒)", 0.0, 60.0, 0.5)
+        obs.obs_property_set_long_description(p_buffer, "在触发剪辑点之前额外向前回溯的时间。\n例如设置为 5.0，则会多保存事件发生前 5 秒的内容。\n要注意由于FFmpeg是以关键帧分割视频的,\n所以片头还会额外多出随机几秒")
         
+        # "保存设置"分组
         g = obs.obs_properties_create()
         obs.obs_properties_add_group(props, "settings", "保存设置", obs.OBS_GROUP_NORMAL, g)
-        obs.obs_properties_add_bool(g, "use_custom_path", "使用自定义保存目录 (不勾选则保存到回放原目录)")
-        obs.obs_properties_add_path(g, "replay1_path", "保存目录（可选）", obs.OBS_PATH_DIRECTORY, "", None)
-        obs.obs_properties_add_float(g, "min_duration_alert", "过短警报阈值 (秒, 0=关闭)", 0.0, 3600, 0.5)
-        obs.obs_properties_add_bool(g, "include_map_name", "文件名包含地图名")
-        obs.obs_properties_add_bool(g, "include_room_name", "文件名包含房间名")
-        obs.obs_properties_add_bool(g, "replay1_remove", "剪辑后删除原片")
-        obs.obs_properties_add_bool(g, "smart_cleanup", "自动去重 (若新片段包含旧片段则删除旧片段)")
         
 
-        # === 自动合成设置分组 ===
+        p_use_custom = obs.obs_properties_add_bool(g, "use_custom_path", "使用自定义保存目录")
+        p_path = obs.obs_properties_add_path(g, "replay1_path", "保存目录（可选）", obs.OBS_PATH_DIRECTORY, "", None)
+        obs.obs_property_set_visible(p_path, clipper_core._show_custom_path)
+        obs.obs_property_set_modified_callback(p_use_custom, toggle_custom_path)
+        obs.obs_property_set_long_description(p_use_custom,"最终剪辑出来的片段的存放点\n如果不勾选则保存到原回放缓存所在目录")
+
+       
+        p_min_duration_alert = obs.obs_properties_add_float(g, "min_duration_alert", "过短警报阈值 (秒, 0=关闭)", 0.0, 3600, 0.5)
+        obs.obs_property_set_long_description(p_min_duration_alert,"如果最终剪辑得到的视频长度少于设定的值,则播放一声短促的警告声\n设置为0则关闭报警功能")
+
+
+        obs.obs_properties_add_bool(g, "include_map_name", "文件名包含地图名")
+
+
+        obs.obs_properties_add_bool(g, "include_room_name", "文件名包含房间名")
+
+
+        p_replay1_remove = obs.obs_properties_add_bool(g, "replay1_remove", "剪辑后删除原片")
+        obs.obs_property_set_long_description(p_replay1_remove,"脚本原理是导出回放缓存后进行剪辑,\n勾选会在剪辑完毕后清理导出的回放缓存文件")
+
+
+        p_smart_cleanup = obs.obs_properties_add_bool(g, "smart_cleanup", "自动去重")
+        obs.obs_property_set_long_description(p_smart_cleanup,"若新片段完全包含旧片段则删除旧片段\n如果怕误删可以关掉\n目前测试下来还没有误删案例")
+
+
+        # # === 自动合成设置分组 ===(暂时终止)
         # g_merge = obs.obs_properties_create()
-        # obs.obs_properties_add_group(props, "auto_merge_settings", "🎞️ 片段合并(未实装)", obs.OBS_GROUP_NORMAL, g_merge)
+        # obs.obs_properties_add_group(props, "auto_merge_settings", "🎞️ 片段合并(测试)", obs.OBS_GROUP_NORMAL, g_merge)
         # obs.obs_properties_add_bool(g_merge, "auto_merge_enabled", "启用片段合并")
         # obs.obs_properties_add_bool(g_merge, "auto_merge_use_custom_path", "使用自定义保存目录 (不勾选则保存到第一个片段所在目录)")
         # obs.obs_properties_add_path(g_merge, "auto_merge_output_dir", "最终保存目录（可选）", obs.OBS_PATH_DIRECTORY, "", None)
@@ -767,7 +808,6 @@ if IN_OBS:
     # 默认值设置
     def script_defaults(settings):
         obs.obs_data_set_default_bool(settings, "enabled", True)
-        # obs.obs_data_set_default_bool(settings, "debug_mode", False)
         obs.obs_data_set_default_string(settings, "log_level", "INFO")
         obs.obs_data_set_default_bool(settings, "replay1_remove", True)
         obs.obs_data_set_default_double(settings, "buffer_seconds", 1.0)
@@ -925,8 +965,6 @@ if IN_OBS:
             pass
 
 
-
-
     def script_description():
         return (
             "<h2 style='color:#ff6b81'>🍓 CelesteSmartClipper</h2>"
@@ -946,6 +984,25 @@ if IN_OBS:
             "<p>⚙️ 首次使用：设置游戏目录 → <b>obs设置-热键</b> 中搜索 <code>Celeste</code> 绑定快捷键</p>"
             "<p>📖 点击下方按钮查看完整教程</p>"
         )
+    
+    def toggle_custom_path(props, prop, settings):
+        """
+        回调函数逻辑：
+        1. 获取 'use_custom_path' 当前的勾选状态
+        2. 找到 'replay1_path' 这个控件
+        3. 根据勾选状态，设置 'replay1_path' 显示或隐藏
+        """
+        # 获取用户现在的设置 (True/False)
+        use_custom = obs.obs_data_get_bool(settings, "use_custom_path")
+        
+        # 从 props 中找到要控制的那个控件 (replay1_path)
+        p_target = obs.obs_properties_get(props, "replay1_path")
+        
+        # 设置可见性 (Visible)
+        obs.obs_property_set_visible(p_target, use_custom)
+        
+        return True
+
 
 
 # ==========================================
@@ -956,11 +1013,9 @@ if __name__ == "__main__":
     # OBS 加载脚本时，是作为模块导入 (import)，不会执行这里
     
     if "--run-external" in sys.argv:
-        # 收到暗号，说明是被 OBS 唤醒来干苦力的
         run_external_processor()
     else:
         # 用户直接双击了脚本，提示一下
         print("请不要直接运行此脚本。")
         print("请在 OBS -> 工具 -> 脚本 中加载它。")
         time.sleep(3)
-
