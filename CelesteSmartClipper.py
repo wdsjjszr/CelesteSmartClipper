@@ -23,7 +23,6 @@ except ImportError:
 def get_python_executable():
     """ 
     获取当前环境的 python.exe 路径 
-    这是实现【环境统一】的关键：
     无论在 OBS 里还是外部，都通过这个逻辑找到同一个 python.exe
     """
     # 如果是在 OBS 里，sys.exec_prefix 指向你在设置里选的 Python 目录
@@ -77,8 +76,10 @@ def setup_logger():
     logger.setLevel(logging.DEBUG)  # 最低级别，实际输出由 handler 控制
     
     # 控制台输出（OBS 脚本日志窗口）
-    console_handler = logging.StreamHandler()
+    # console_handler = logging.StreamHandler()
+    console_handler = logging.StreamHandler(sys.stdout) 
     console_handler.setLevel(logging.INFO)  # 默认只显示 INFO 及以上
+    
     
     # 格式化器
     formatter = logging.Formatter(
@@ -106,7 +107,6 @@ log = setup_logger()
 # 外部进程逻辑 (Auto_Editor)
 # ==========================================
 def run_external_processor():
-    """ 这是【黑框框】里运行的代码 """
     print("\n" + "="*50)
     print("🎬 Celeste 自动合成工具 (独立进程模式)")
     print("="*50)
@@ -117,7 +117,7 @@ def run_external_processor():
     # -----------------------------------------------
     # TODO: 在这里写入读取 json、合成视频的逻辑
     # -----------------------------------------------
-    print("正在扫描生成的片段...")
+    print("正在扫描片段...")
     time.sleep(1)
     print("正在合成高光集锦 (模拟中)...")
     
@@ -186,12 +186,12 @@ if IN_OBS:
             return util.find_spec(package) is not None
 
         def install_package(self, package):
-            log.info(f"正在安装 {package}...")
-            python_path = os.path.join(sys.prefix， "python.exe")
+            log.info(f"✅ 正在安装 {package}...")
+            python_path = os.path.join(sys.prefix, "python.exe")
             # 强制安装兼容版本 1.0.3，防止新版报错
             pkg_name = "moviepy==1.0.3" if package == "moviepy" else package
-            subprocess.call([python_path, "-m"， "pip"， "install"， pkg_name])
-            log.info(f"安装完成，请重启 OBS。")
+            subprocess.call([python_path, "-m", "pip", "install", pkg_name])
+            log.info(f"✅ 安装完成，请重启 OBS。")
 
         def install_needed(self, props, prop):
             self.install_package("moviepy")
@@ -211,7 +211,7 @@ if IN_OBS:
             
             game_dir = obs.obs_data_get_string(settings, "celeste_game_dir")
             if game_dir:
-                self.celeste_log_path = os.path.join(game_dir, "VidCutter"， "logs"， "log.txt")
+                self.celeste_log_path = os.path.join(game_dir, "VidCutter", "logs", "log.txt")
             
             self.buffer_seconds = obs.obs_data_get_double(settings, "buffer_seconds")
             self.use_custom_path = obs.obs_data_get_bool(settings, "use_custom_path")
@@ -247,12 +247,12 @@ if IN_OBS:
                 for x in range(10):
                     if not self.file_in_use(filepath):
                         break
-                    log.debug(f"文件占用中，等待释放...")
+                    log.debug(f"⚙️ 文件占用中，等待释放...")
                     sleep(0.5)
                 os.remove(filepath)
-                log.debug(f"原始文件已删除: {filepath}")
+                log.debug(f"⚙️ 原始文件已删除: {filepath}")
             except Exception as e:
-                log.error(f"删除文件失败: {filepath}", exc_info=True)
+                log.error(f"❌ 删除文件失败: {filepath}", exc_info=True)
 
         # 文件名净化工具
         def sanitize_filename_part(self, text, max_length=20):
@@ -279,11 +279,8 @@ if IN_OBS:
                 pass
 
         def ffmpeg_extract_subclip(self, filename, t1, t2, targetname=None):
-            # 延迟导入
-            if "moviepy.config" not in sys.modules:
-                from moviepy.config import get_setting
-            if "moviepy.tools" not in sys.modules:
-                from moviepy.tools import subprocess_call
+            from moviepy.config import get_setting
+            from moviepy.tools import subprocess_call
                 
             name, ext = os.path.splitext(filename)
             if not targetname:
@@ -296,8 +293,27 @@ if IN_OBS:
                 "-t", "%0.2f"%(t2-t1),
                 "-vcodec", "copy", "-acodec", "copy", targetname]
             
-            logger = "bar" if log.isEnabledFor(logging.DEBUG) else None
-            subprocess_call(cmd, logger)
+            # logger = "bar" if log.isEnabledFor(logging.DEBUG) else None
+            # subprocess_call(cmd, logger)
+
+            # 记录 DEBUG 日志 (只有开启调试模式才会显示，且格式统一)
+            cmd_str = " ".join(f'"{c}"' if " " in c else c for c in cmd)
+            log.debug(f"⚙️ 正在执行 FFmpeg: {cmd_str}")
+
+            # 执行命令 (静默模式)
+            # creationflags=0x08000000 是 CREATE_NO_WINDOW，防止弹黑框
+            # capture_output=True 会吞掉 ffmpeg 的原生输出，除非你想打印出来
+            try:
+                subprocess.run(
+                    cmd, 
+                    check=True, 
+                    capture_output=True, 
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+                )
+                log.debug("⚙️ FFmpeg 执行成功")
+            except subprocess.CalledProcessError as e:
+                log.error(f"❌ FFmpeg 执行失败: {e.stderr.decode('utf-8', errors='ignore')}")
+                raise e
 
         def get_last_replay_path(self):
             """ 获取 OBS 生成的最后一个回放文件路径 """
@@ -339,7 +355,7 @@ if IN_OBS:
                 clip = VideoFileClip(filepath)
                 return clip.duration, clip.fps
             except Exception as e:
-                log.error(f"读取元数据失败: {e}")
+                log.error(f"❌ 读取元数据失败: {e}")
                 return 0, 0
             finally:
                 if clip: clip.close()
@@ -350,7 +366,7 @@ if IN_OBS:
                 frame_time = 1.0 / fps
                 target_frame_count = round(raw_duration / frame_time)
                 aligned_duration = target_frame_count * frame_time
-                log.debug(f"帧对齐: {raw_duration:.2f}s -> {aligned_duration:.2f}s ({target_frame_count}帧 @ {fps}fps)")
+                log.debug(f"⚙️ 帧对齐: {raw_duration:.2f}s -> {aligned_duration:.2f}s ({target_frame_count}帧 @ {fps}fps)")
                 return aligned_duration
             return raw_duration
 
@@ -383,13 +399,13 @@ if IN_OBS:
             """ 执行移动或剪辑操作 """
             # 情况 A：请求时长 >= 视频全长 -> 直接改名/移动
             if wanted_duration >= real_duration:
-                log.info(f"提示：请求时长 >= 视频全长，执行快速重命名。")
+                log.warning(f"⚠️ 请求时长 >= 视频全长，执行快速重命名。")
                 shutil.move(original_path, new_path)
                 log.info(f"✅ 已快速归档: {new_path}")
             # 情况 B：请求时长 < 视频全长 -> 需要剪辑 (调用 FFmpeg)
             else:
                 start_time = max(0, real_duration - wanted_duration) # 防止负数
-                log.info(f"✂️ 执行剪辑: {start_time:.2f}s -> {real_duration:.2f}s")
+                log.info(f"✅ ✂️ 执行剪辑: {start_time:.2f}s -> {real_duration:.2f}s")
                 
                 self.ffmpeg_extract_subclip(original_path, start_time, real_duration, targetname=new_path)
                 
@@ -403,13 +419,13 @@ if IN_OBS:
             if self.smart_cleanup and self.last_generated_clip and self.last_used_marker:
                 if current_death_time == self.last_used_marker:
                     if real_duration >= wanted_duration:
-                        log.info(f"🗑️ 检测到冗余片段，正在删除: {self.last_generated_clip}")
+                        log.info(f"✅ 🗑️ 检测到冗余片段，正在删除: {self.last_generated_clip}")
                         self.safe_remove_file(self.last_generated_clip)
                         self._update_json_record("remove", self.last_generated_clip)
                     else:
                         log.warning(f"⚠️ 缓存上限导致新视频开头缺失，保留旧片段。")
 
-        def _update_json_record(self, action, file_path, real_duration=0.0, wanted_duration=0.0):
+        def _update_json_record(self, action, file_path, raw_delta=0.0, original_buffer=0.0):
             """ 
             更新 segments.json 元数据文件 
             """
@@ -432,13 +448,23 @@ if IN_OBS:
                     data = [item for item in data if item.get('filename') != filename]
                     
                 elif action == "add":
-                    # 计算死亡点在视频文件中的精确时间戳
-                    # 计算 FFmpeg 产生的随机废片长度 (实际 - 期望)
-                    ffmpeg_waste = real_duration - wanted_duration
+                    final_duration = 0.0
+                    try:
+                        # 再次利用 moviepy 或 ffmpeg 探测最终文件时长
+                        # 为了性能，这里可以用简单的 ffmpeg probe，或者复用 moviepy
+                        # 如果为了省事，可以直接用 self._get_video_metadata(file_path)
+                        # 注意：这会带来一点点IO开销，但为了精准是必须的
+                        final_duration, _ = self._get_video_metadata(file_path)
+                    except:
+                        log.error("❌ 无法读取生成文件的时长，无法计算死亡点")
                     
-                    # 死亡点位置 = 废片 + 缓冲
-                    # 例如: 多切了1.5s, 缓冲设了1.0s -> 死亡点在视频的 2.5s 处
-                    death_point = ffmpeg_waste + self.buffer_seconds
+                    # 倒推法计算死亡点
+                    # 视频总长 - (从死亡到剪辑经过的时间)
+                    death_point = final_duration - raw_delta
+                    
+                    # 修正：如果算出来是负数，说明死亡点在视频开始之前（缓存不够长）
+                    if death_point < 0:
+                        log.warning(f"⚠️ 死亡点在视频范围外 ({death_point:.2f}s)，可能是回放缓存太短")
                     
                     new_record = {
                         "filename": filename,
@@ -446,11 +472,10 @@ if IN_OBS:
                         "death_point_in_video": round(death_point, 6),
                         
                         # 辅助数据：记录当时的缓冲设置，方便后期调整
-                        "original_buffer": self.buffer_seconds, 
+                        "original_buffer": original_buffer, 
                         
                         # 调试数据：保留原始时长信息
-                        "real_duration": round(real_duration, 6),
-                        "wanted_duration": round(wanted_duration, 6),
+                        "final_file_duration": round(final_duration, 6),
                         
                         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     }
@@ -464,40 +489,41 @@ if IN_OBS:
                     json.dump(data, f, indent=2, ensure_ascii=False)
                     
                 if action == "add":
-                    log.debug(f"JSON记录: 死亡点位于视频 {death_point:.2f}s")
+                    log.debug(f"⚙️ JSON记录: 死亡点位于视频 {death_point:.2f}s")
 
             except Exception as e:
-                log.error(f"⚠️ 写入元数据失败: {e}")
+                log.error(f"❌ 写入元数据失败: {e}")
 
         # ================= 业务逻辑：剪辑执行 =================
         def perform_smart_cut(self, death_time_point, trigger_time_point):
             # 基础环境检查
             if not self.enabled: return
             if not obs.obs_frontend_replay_buffer_active():
-                log.error("错误：回放缓存未开启！")
+                log.error("❌ 回放缓存未开启！")
                 self.play_feedback(True)
                 return
             if not self.check_package("moviepy"):
-                log.error("严重错误：未安装 moviepy 库！")
+                log.error("❌ 严重未安装 moviepy 库！")
                 self.play_feedback(True)
                 return
 
             # 保存并获取原始回放文件
-            log.info(f"正在等待文件写入硬盘...")
+            log.info(f"✅ 正在等待文件写入硬盘...")
             last_replay = self.save_and_wait_for_file()
             
             if not (last_replay and os.path.exists(last_replay)):
-                log.error("获取回放文件失败 (超时或未找到)")
+                log.error("❌ 获取回放文件失败 (超时或未找到)")
                 self.play_feedback(True)
                 return
 
             try:
-                # 计算基础时长请求
+                # 1. 计算理论请求时长 (Wanted Duration)
+                # 逻辑: (触发时间 - 死亡时间) + 缓冲时间
                 raw_delta = (trigger_time_point - death_time_point).total_seconds()
                 raw_wanted_duration = raw_delta + self.buffer_seconds
                 
                 if raw_wanted_duration <= 0:
-                    log.error(f"❌ 错误：计算时长异常 ({raw_wanted_duration}秒)")
+                    log.error(f"❌ 计算时长异常 ({raw_wanted_duration}秒)")
                     self.play_feedback(True)
                     return
 
@@ -510,7 +536,7 @@ if IN_OBS:
                 
                 # 帧对齐计算最终时长
                 wanted_duration = self._calculate_aligned_duration(raw_wanted_duration, video_fps)
-                log.debug(f"✅ 文件就绪，目标时长: {wanted_duration:.2f}秒")
+                log.debug(f"⚙️ 文件就绪，目标时长: {wanted_duration:.2f}秒")
 
                 # 生成目标路径
                 new_file_path = self._generate_output_path(last_replay, wanted_duration, real_duration)
@@ -521,8 +547,8 @@ if IN_OBS:
                 self._update_json_record(
                     action="add", 
                     file_path=new_file_path, 
-                    real_duration=real_duration, 
-                    wanted_duration=wanted_duration
+                    raw_delta=raw_delta,           # 传入真实时间差
+                    original_buffer=self.buffer_seconds
                 )
 
                 # 智能去重处理
@@ -530,7 +556,7 @@ if IN_OBS:
 
                 # 过短警报检测
                 if self.min_duration_alert > 0 and real_duration < self.min_duration_alert:
-                    log.warning(f"⚠️ 警告：剪辑时长 ({wanted_duration:.2f}s) 小于设定阈值！")
+                    log.warning(f"⚠️ 剪辑时长 ({wanted_duration:.2f}s) 小于设定阈值！")
                     winsound.Beep(1000, 250)
 
                 # 更新状态
@@ -538,7 +564,7 @@ if IN_OBS:
                 self.last_used_marker = death_time_point
 
             except Exception as e:
-                log.error(f"处理异常: {e}", exc_info=True)
+                log.error(f"❌ 处理异常: {e}", exc_info=True)
 
         # ================= 业务逻辑：Celeste 识别 =================
 
@@ -589,13 +615,18 @@ if IN_OBS:
                                 if len(deaths) >= count:
                                     break
             except Exception as e:
-                log.error(f"读取日志出错: {e}")
+                log.error(f"❌ 读取日志出错: {e}")
                 
             return deaths
 
         #标记最近一次死亡
         def action_mark(self,pressed):
             if not pressed: return
+
+            if not obs.obs_frontend_replay_buffer_active():
+                log.error("❌ 回放缓存未开启！")
+                self.play_feedback(True)
+                return
             
             deaths = self.find_recent_deaths(self.celeste_log_path, 1)
             if deaths:
@@ -605,7 +636,7 @@ if IN_OBS:
                 self.last_map_name = data['map']
                 self.last_room_name = data['room']
                 
-                log.info(f"📍 已标记: {self.last_death_time.strftime('%H:%M:%S')} (地图:{self.last_map_name} 房间:{self.last_room_name})")
+                log.info(f"✅ 📍 已标记: {self.last_death_time.strftime('%H:%M:%S')} (地图:{self.last_map_name} 房间:{self.last_room_name})")
                 self.play_feedback(False)
             else:
                 log.warning("⚠️ 日志中未找到记录")
@@ -615,6 +646,11 @@ if IN_OBS:
         def action_mark_prev(self,pressed):
             if not pressed: return
             
+            if not obs.obs_frontend_replay_buffer_active():
+                log.error("❌ 回放缓存未开启！")
+                self.play_feedback(True)
+                return
+
             deaths = self.find_recent_deaths(self.celeste_log_path, 2)
             if len(deaths) >= 2:
                 data = deaths[1]
@@ -622,7 +658,7 @@ if IN_OBS:
                 self.last_map_name = data['map']
                 self.last_room_name = data['room']
                 
-                log.info(f"⏪ 已追溯: {self.last_death_time.strftime('%H:%M:%S')} (地图:{self.last_map_name} 房间:{self.last_room_name})")
+                log.info(f"✅ ⏪ 已追溯: {self.last_death_time.strftime('%H:%M:%S')} (地图:{self.last_map_name} 房间:{self.last_room_name})")
                 self.play_feedback(False)
             else:
                 log.warning("⚠️ 无足够记录追溯")
@@ -630,10 +666,10 @@ if IN_OBS:
                 
         # 触发剪辑
         def logic_trigger(self):
-
+            
                 # 检查是否已标记
                 if not self.last_death_time:
-                    log.warning("⚠️ 错误：请先按标记键！")
+                    log.error("❌ 请先按标记键！")
                     self.play_feedback(True)
                     return
                 
@@ -642,7 +678,7 @@ if IN_OBS:
                     #在保存之前，先记录当前时间
                     trigger_time_snapshot = datetime.now()
                     
-                    log.info("🎬 开始保存回放缓存...")
+                    log.info("✅ 🎬 开始保存回放缓存...")
                     self.play_feedback(False)
                     
                     # 把这个“快照时间”传给执行函数
@@ -715,7 +751,7 @@ if IN_OBS:
 
         # === 自动合成设置分组 ===
         g_merge = obs.obs_properties_create()
-        obs.obs_properties_add_group(props, "auto_merge_settings", "🎞️ 片段合并(暂未实装）", obs.OBS_GROUP_NORMAL, g_merge)
+        obs.obs_properties_add_group(props, "auto_merge_settings", "🎞️ 片段合并(未实装)", obs.OBS_GROUP_NORMAL, g_merge)
         obs.obs_properties_add_bool(g_merge, "auto_merge_enabled", "启用片段合并")
         obs.obs_properties_add_bool(g_merge, "auto_merge_use_custom_path", "使用自定义保存目录 (不勾选则保存到第一个片段所在目录)")
         obs.obs_properties_add_path(g_merge, "auto_merge_output_dir", "最终保存目录（可选）", obs.OBS_PATH_DIRECTORY, "", None)
@@ -894,7 +930,7 @@ if IN_OBS:
     def script_description():
         return (
             "<h2 style='color:#ff6b81'>🍓 CelesteSmartClipper</h2>"
-            "<p><b>Celeste 智能回放剪辑脚本v1.0</b></p>"
+            "<p><b>Celeste 智能回放剪辑脚本v1.1-alpha</b></p>"
             "<hr>"
             "<p>配合 VidCutter 模组的输出日志，自动识别游戏内死亡/重生事件，<br>"
             "一键从 OBS 回放缓存中精准截取通过片段，告别海量素材堆积。</p>"
