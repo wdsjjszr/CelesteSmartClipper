@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # ==============================================================================
-# Celeste Smart Clipper v1.1
+# Celeste Smart Clipper v1.2
 # Copyright (C) 2026 RemovableDiskC
 #
 # 基于 VidCutter 日志的 Celeste 自动化剪辑与合并工具
@@ -169,6 +169,11 @@ if IN_OBS:
             self.buffer_seconds = 1.0  #默认缓冲时长
             self.min_duration_alert = 0.0 #过短警报阈值
 
+            # --- 起点裁剪配置 ---
+            self.trim_respawn = True       # 只保留复活结束后的片段
+            self.respawn_offset = 1.0      # 从死亡标记点向后跳过的秒数（死亡+复活动画时长）
+            self.accurate_cut = True       # 重新编码以保证起点精确（否则会对齐到关键帧）
+
             # 智能清理相关的状态变量
             self.smart_cleanup = False     # 开关
             self.last_generated_clip = None # 记录上一次生成的文件路径
@@ -220,6 +225,9 @@ if IN_OBS:
                 self.celeste_log_path = os.path.join(game_dir, "VidCutter", "logs", "log.txt")
             
             self.buffer_seconds = obs.obs_data_get_double(settings, "buffer_seconds")
+            self.trim_respawn = obs.obs_data_get_bool(settings, "trim_respawn")
+            self.respawn_offset = obs.obs_data_get_double(settings, "respawn_offset")
+            self.accurate_cut = obs.obs_data_get_bool(settings, "accurate_cut")
             self.use_custom_path = obs.obs_data_get_bool(settings, "use_custom_path")
             self._show_custom_path = obs.obs_data_get_bool(settings, "use_custom_path")
             self.replay1_path = obs.obs_data_get_string(settings, "replay1_path")
@@ -286,20 +294,42 @@ if IN_OBS:
             except:
                 pass
 
-        def ffmpeg_extract_subclip(self, filename, t1, t2, targetname=None):
+        def ffmpeg_extract_subclip(self, filename, t1, t2, targetname=None, accurate=False):
+            """
+            截取 [t1, t2) 片段。
+            accurate=True: 重新编码，起点精确，不会因为关键帧而多出复活画面；
+            accurate=False: 流复制，速度快，但起点会对齐到上一个关键帧。
+            """
             from moviepy.config import get_setting
             # from moviepy.tools import subprocess_call
-                
+
             name, ext = os.path.splitext(filename)
             if not targetname:
                 targetname = f"{name}_SUB.{ext}"
-            
-            # 调用 FFmpeg
-            cmd = [get_setting("FFMPEG_BINARY"), "-y",
-                "-ss", "%0.6f"%t1,
-                "-i", filename,
-                "-t", "%0.2f"%(t2-t1),
-                "-vcodec", "copy", "-acodec", "copy", targetname]
+
+            ffmpeg_bin = get_setting("FFMPEG_BINARY")
+            duration = max(0.0, t2 - t1)
+
+            if accurate:
+                # 重新编码：保证片头从指定时间点精确开始
+                cmd = [ffmpeg_bin, "-y",
+                    "-ss", "%0.6f"%t1,
+                    "-i", filename,
+                    "-t", "%0.3f"%duration,
+                    "-c:v", "libx264",
+                    "-preset", "veryfast",
+                    "-crf", "18",
+                    "-pix_fmt", "yuv420p",
+                    "-c:a", "aac",
+                    "-b:a", "192k",
+                    targetname]
+            else:
+                # 调用 FFmpeg（流复制）
+                cmd = [ffmpeg_bin, "-y",
+                    "-ss", "%0.6f"%t1,
+                    "-i", filename,
+                    "-t", "%0.3f"%duration,
+                    "-vcodec", "copy", "-acodec", "copy", targetname]
             
             # logger = "bar" if log.isEnabledFor(logging.DEBUG) else None
             # subprocess_call(cmd, logger)
@@ -415,7 +445,10 @@ if IN_OBS:
                 start_time = max(0, real_duration - wanted_duration) # 防止负数
                 log.info(f"✅ ✂️ 执行剪辑: {start_time:.2f}s -> {real_duration:.2f}s")
                 
-                self.ffmpeg_extract_subclip(original_path, start_time, real_duration, targetname=new_path)
+                self.ffmpeg_extract_subclip(
+                    original_path, start_time, real_duration,
+                    targetname=new_path, accurate=self.accurate_cut
+                )
                 
                 # 剪辑完成后，处理原始文件
                 if self.replay1_remove and os.path.exists(new_path):
@@ -470,9 +503,13 @@ if IN_OBS:
                     # 视频总长 - (从死亡到剪辑经过的时间)
                     death_point = final_duration - raw_delta
                     
-                    # 算出来是负数，说明死亡点在视频开始之前（缓存不够长）
+                    # 算出来是负数，说明死亡点在视频开始之前
                     if death_point < 0:
-                        log.warning(f"⚠️ 死亡点在视频范围外 ({death_point:.2f}s)，可能是回放缓存太短")
+                        if self.trim_respawn:
+                            # 开启裁剪时这是预期结果：死亡点本来就被剪掉了
+                            log.debug(f"⚙️ 死亡点位于片段起点前 {-death_point:.2f}s（已去除死亡/复活动画）")
+                        else:
+                            log.warning(f"⚠️ 死亡点在视频范围外 ({death_point:.2f}s)，可能是回放缓存太短")
                     
                     new_record = {
                         "filename": filename,
@@ -526,12 +563,25 @@ if IN_OBS:
 
             try:
                 # 1. 计算理论请求时长 (Wanted Duration)
-                # 逻辑: (触发时间 - 死亡时间) + 缓冲时间
                 raw_delta = (trigger_time_point - death_time_point).total_seconds()
-                raw_wanted_duration = raw_delta + self.buffer_seconds
-                
+
+                if self.trim_respawn:
+                    # 新逻辑：从复活动画结束后开始，只保留「复活结束 → 触发剪辑」
+                    # 片段起点 = 死亡时间 + respawn_offset，不再向前保留死亡前画面
+                    raw_wanted_duration = raw_delta - self.respawn_offset
+                    log.debug(
+                        f"⚙️ 去除死亡/复活动画: 死亡→触发 {raw_delta:.2f}s, "
+                        f"跳过 {self.respawn_offset:.2f}s, 保留 {raw_wanted_duration:.2f}s"
+                    )
+                else:
+                    # 旧逻辑: (触发时间 - 死亡时间) + 缓冲时间
+                    raw_wanted_duration = raw_delta + self.buffer_seconds
+
                 if raw_wanted_duration <= 0:
-                    log.error(f"❌ 计算时长异常 ({raw_wanted_duration}秒)")
+                    log.error(
+                        f"❌ 计算时长异常 ({raw_wanted_duration:.2f}秒)："
+                        f"请确认触发时间晚于复活动画结束时间，或调小「死亡后跳过时间」"
+                    )
                     self.play_feedback(True)
                     return
 
@@ -562,9 +612,10 @@ if IN_OBS:
                 # 智能去重处理
                 self._handle_deduplication(death_time_point, wanted_duration, real_duration)
 
-                # 过短警报检测
-                if self.min_duration_alert > 0 and real_duration < self.min_duration_alert:
-                    log.warning(f"⚠️ 剪辑时长 ({wanted_duration:.2f}s) 小于设定阈值！")
+                # 过短警报检测（注意：应该检查最终片段时长，而不是原始回放时长）
+                final_duration = min(wanted_duration, real_duration)
+                if self.min_duration_alert > 0 and final_duration < self.min_duration_alert:
+                    log.warning(f"⚠️ 剪辑时长 ({final_duration:.2f}s) 小于设定阈值！")
                     winsound.Beep(1000, 250)
 
                 # 更新状态
@@ -758,8 +809,20 @@ if IN_OBS:
 
 
         p_buffer = obs.obs_properties_add_float(props, "buffer_seconds", "剪辑缓冲时间 (秒)", 0.0, 60.0, 0.5)
-        obs.obs_property_set_long_description(p_buffer, "在触发剪辑点之前额外向前回溯的时间。\n例如设置为 5.0，则会多保存事件发生前 5 秒的内容。\n要注意由于FFmpeg是以关键帧分割视频的,\n所以片头还会额外多出随机几秒")
-        
+        obs.obs_property_set_long_description(p_buffer, "在触发剪辑点之前额外向前回溯的时间。\n例如设置为 5.0，则会多保存事件发生前 5 秒的内容。\n要注意由于FFmpeg是以关键帧分割视频的,\n所以片头还会额外多出随机几秒\n\n⚠️ 开启「只保留复活结束后的片段」后，此项不再生效")
+
+
+        p_trim_respawn = obs.obs_properties_add_bool(props, "trim_respawn", "只保留复活结束后的片段")
+        obs.obs_property_set_long_description(p_trim_respawn, "勾选后，片段只包含「复活动画结束 → 按下剪辑键」的画面，\n不再包含死亡前的缓冲画面以及死亡/复活动画。\n\n注意：该模式下「剪辑缓冲时间」不再生效。")
+
+
+        p_respawn_offset = obs.obs_properties_add_float(props, "respawn_offset", "死亡后跳过时间 (秒)", 0.0, 10.0, 0.1)
+        obs.obs_property_set_long_description(p_respawn_offset, "从死亡标记点向后跳过的时长，用于去掉死亡动画与复活过场。\nCeleste 的死亡+复活渐变通常约 1~1.5 秒；\n如果片段开头仍残留复活过程，请调大此值；\n如果剪掉了复活后已经可以操作的部分，请调小此值。\n\n仅在开启「只保留复活结束后的片段」时生效。")
+
+
+        p_accurate_cut = obs.obs_properties_add_bool(props, "accurate_cut", "精确起点（重新编码）")
+        obs.obs_property_set_long_description(p_accurate_cut, "开启：重新编码视频以精确裁切起点，速度较慢但片头不会多出画面。\n关闭：无损快速剪切，起点可能向前偏移到上一个关键帧，\n从而在片头多出少量死亡/复活画面。\n\n推荐开启，尤其是希望片头正好从复活结束时开始时。")
+
         # "保存设置"分组
         g = obs.obs_properties_create()
         obs.obs_properties_add_group(props, "settings", "保存设置", obs.OBS_GROUP_NORMAL, g)
@@ -811,6 +874,9 @@ if IN_OBS:
         obs.obs_data_set_default_string(settings, "log_level", "INFO")
         obs.obs_data_set_default_bool(settings, "replay1_remove", True)
         obs.obs_data_set_default_double(settings, "buffer_seconds", 1.0)
+        obs.obs_data_set_default_bool(settings, "trim_respawn", True)
+        obs.obs_data_set_default_double(settings, "respawn_offset", 1.0)
+        obs.obs_data_set_default_bool(settings, "accurate_cut", True)
         obs.obs_data_set_default_bool(settings, "include_map_name", True)
         obs.obs_data_set_default_bool(settings, "include_room_name", True)
         obs.obs_data_set_default_bool(settings, "enable_sound", False)
@@ -928,12 +994,20 @@ if IN_OBS:
         print("  └────────────────────────────────────────────┘")
         
         print("\n【进阶设置说明】")
-        print("  · 剪辑缓冲时间：在标记点前额外保留的秒数（推荐 1~2 秒）")
+        print("  · 只保留复活结束后的片段：去掉死亡前缓冲与死亡/复活动画")
+        print("  · 死亡后跳过时间：从死亡标记点向后跳过多久开始保留")
+        print("    （Celeste 死亡+复活过场通常约 1~1.5 秒，不同章节可微调）")
+        print("  · 精确起点（重新编码）：较慢，但片头不会因关键帧多出复活画面")
+        print("  · 剪辑缓冲时间：仅在关闭「只保留复活结束后的片段」时生效，")
+        print("    表示在标记点前额外保留的秒数（推荐 1~2 秒）")
         print("  · 自动去重：连续剪辑同一标记点时，删除被新片段覆盖的旧片段")
         print("  · 过短警报：片段时长低于阈值时发出提示音（检测异常情况）")
         print("  · 文件命名：可自动附加地图名、房间名、时长标识")
         
         print("\n【技术说明】")
+        print("  · 默认剪辑范围：复活动画结束 → 按下「剪辑」键（保存点）")
+        print("  · 片头如需 100% 精确，请开启「精确起点（重新编码）」；")
+        print("    关闭时会使用流复制快速剪切，起点可能对齐到上一个关键帧")
         print("  · 脚本识别的事件类型：DEATH / STATE / LEVEL LOADED")
         print("  · 这意味着 SL加载、F6传送、章节重开 也会被记录为有效标记点")
         print("  · ⚠️ 剪辑时长上限 = OBS 回放缓存设置时长,因此不适用于炼长金或打超长单面")
@@ -978,7 +1052,7 @@ if IN_OBS:
             "<table style='margin-left:10px'>"
             "<tr><td><b>标记</b></td><td>记录最近一次死亡/重生时间点</td></tr>"
             "<tr><td><b>追溯</b></td><td>改为记录上上次时间点（误操作补救/唐死保存）</td></tr>"
-            "<tr><td><b>剪辑</b></td><td>导出「标记点 → 当前」的视频片段</td></tr>"
+            "<tr><td><b>剪辑</b></td><td>导出「复活动画结束 → 当前」的视频片段</td></tr>"
             "</table>"
             "<hr>"
             "<p>⚙️ 首次使用：设置游戏目录 → <b>obs设置-热键</b> 中搜索 <code>Celeste</code> 绑定快捷键</p>"
